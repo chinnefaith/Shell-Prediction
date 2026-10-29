@@ -1,0 +1,519 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../models/quiz_data.dart';
+import 'quiz_result_screen.dart';
+import '../services/quiz_manager.dart';
+import '../services/quiz_repository.dart';
+
+class QuizScreen extends StatefulWidget {
+  const QuizScreen({super.key, this.onBackPressed});
+
+  final VoidCallback? onBackPressed;
+
+  @override
+  State<QuizScreen> createState() => _QuizScreenState();
+}
+
+class _QuizScreenState extends State<QuizScreen> {
+  QuizManager? _manager;
+  String? _error;
+  bool _isLoading = true;
+  bool _showResult = false;
+  bool _showFeedback = false;
+  String _feedbackText = '';
+  Color _feedbackColor = const Color(0xFF2E7D32);
+  Timer? _feedbackTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadQuiz();
+  }
+
+  @override
+  void dispose() {
+    _feedbackTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadQuiz() async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      final data = await const QuizRepository().loadQuiz();
+      if (!mounted) return;
+      final manager = QuizManager(data: data, preferences: preferences);
+      if (!mounted) return;
+      setState(() => _manager = manager);
+      await manager.startRandomQuiz();
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _startRandomQuiz() async {
+    final manager = _manager;
+    if (manager == null) return;
+    setState(() => _isLoading = true);
+    await manager.startRandomQuiz();
+    if (!mounted) return;
+    setState(() {
+      _isLoading = false;
+      _showResult = false;
+    });
+  }
+
+  void _handleBackPressed() {
+    _manager?.resetSession();
+    widget.onBackPressed?.call();
+  }
+
+  Future<void> _restartQuiz() async {
+    _manager?.resetSession();
+    await _startRandomQuiz();
+  }
+
+  Future<void> _selectAnswer(int answerIndex) async {
+    final manager = _manager;
+    if (manager == null) return;
+    await manager.selectAnswer(answerIndex);
+    if (!mounted) return;
+
+    final isCorrect =
+        manager.currentQuestion != null &&
+        answerIndex == manager.currentQuestion!.answerIndex;
+    _feedbackTimer?.cancel();
+    setState(() {
+      _showResult = false;
+      _feedbackText = isCorrect ? 'Correct!' : 'Wrong!';
+      _feedbackColor = isCorrect ? const Color(0xFF2E7D32) : const Color(0xFFB42318);
+      _showFeedback = true;
+    });
+
+    _feedbackTimer = Timer(const Duration(seconds: 1), () {
+      if (!mounted) return;
+      setState(() => _showFeedback = false);
+    });
+  }
+
+  Future<void> _nextQuestion() async {
+    final manager = _manager;
+    if (manager == null) return;
+    final finished = await manager.nextQuestion();
+    if (!mounted) return;
+    setState(() {
+      _showResult = finished;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final manager = _manager;
+    return Scaffold(
+      backgroundColor: const Color(0xFFFAF8F2),
+      appBar:
+          _showResult
+              ? null
+              : AppBar(
+                backgroundColor: const Color(0xFF0B2D4D),
+                elevation: 0,
+                centerTitle: true,
+                leading: IconButton(
+                  onPressed: _handleBackPressed,
+                  icon: const Icon(Icons.arrow_back, color: Color(0xFFFAF8F2)),
+                  tooltip: 'Back to home',
+                ),
+                title:
+                    _showResult || manager == null
+                        ? const Text(
+                          'Quiz Result',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Color(0xFFFAF8F2),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        )
+                        : _buildProgressTitle(manager),
+                actions: [
+                  if (manager != null)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 16),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.star,
+                            color: Color(0xFFE8D8B8),
+                            size: 22,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${manager.score}',
+                            style: const TextStyle(
+                              color: Color(0xFFFAF8F2),
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+      body: _buildBody(manager),
+    );
+  }
+
+  Widget _buildProgressTitle(QuizManager manager) {
+    final total = manager.sessionQuestions.length;
+    final progress = total == 0 ? 0.0 : (manager.currentIndex + 1) / total;
+    return Center(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Question ${manager.currentIndex + 1} of $total',
+            style: const TextStyle(
+              fontSize: 16,
+              color: Color(0xFFFAF8F2),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 72,
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 8,
+              borderRadius: BorderRadius.circular(8),
+              backgroundColor: const Color(0xFFE8D8B8),
+              color: const Color(0xFF0B2D4D),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBody(QuizManager? manager) {
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(color: Color(0xFF0B2D4D)),
+      );
+    }
+    if (_error != null || manager == null) {
+      return Center(
+        child: Text(
+          'Unable to load quiz data.',
+          style: const TextStyle(color: Color(0xFF163E5C)),
+        ),
+      );
+    }
+    if (_showResult) {
+      return QuizResultScreen(
+        score: manager.score,
+        totalQuestions: manager.sessionQuestions.length,
+        onRestart: _restartQuiz,
+      );
+    }
+    if (manager.hasSession) return _buildQuestion(manager);
+    return Center(
+      child: FilledButton(
+        onPressed: _startRandomQuiz,
+        style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0B2D4D)),
+        child: const Text('Start Quiz'),
+      ),
+    );
+  }
+
+  Widget _buildQuestion(QuizManager manager) {
+    final question = manager.currentQuestion!;
+
+    return Stack(
+      children: [
+        ListView(
+          padding: const EdgeInsets.fromLTRB(16, 30, 16, 24),
+          children: [
+            Text(
+              question.question,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 16,
+                height: 1.3,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF0B2D4D),
+              ),
+            ),
+            const SizedBox(height: 30),
+            if (question.type == 'image_choice')
+              _buildImageChoices(question)
+            else
+              _buildTextChoices(question),
+            const SizedBox(height: 30),
+            FilledButton(
+              onPressed: manager.selectedAnswerIndex == null ? null : _nextQuestion,
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF0B2D4D),
+                foregroundColor: const Color(0xFFE8D8B8),
+                disabledBackgroundColor: const Color(0xFFE8D8B8),
+                disabledForegroundColor: const Color(0xFF163E5C),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                textStyle: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              child: Text(manager.isLastQuestion ? 'Finish Quiz' : 'Next Question'),
+            ),
+          ],
+        ),
+        IgnorePointer(
+          ignoring: !_showFeedback,
+          child: Center(
+            child: AnimatedOpacity(
+              opacity: _showFeedback ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeInOut,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 18),
+                decoration: BoxDecoration(
+                  color: _feedbackColor,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(
+                  _feedbackText,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildImageChoices(QuizQuestion question) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: question.choices.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        childAspectRatio: 0.95,
+      ),
+      itemBuilder: (context, index) {
+        final choice = question.choices[index];
+        return _ChoiceCard(
+          selected: _manager?.selectedAnswerIndex == index,
+          correct:
+              _manager?.selectedAnswerIndex != null &&
+              index == question.answerIndex,
+          wrong:
+              _manager?.selectedAnswerIndex == index &&
+              index != question.answerIndex,
+          onTap: () => _selectAnswer(index),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image.asset(
+                    QuizRepository.normalizeAssetPath(
+                      choice.imagePath ?? choice.imageName,
+                    ),
+                    fit: BoxFit.cover,
+                    errorBuilder:
+                        (context, error, stackTrace) => const Icon(
+                          Icons.image_not_supported_outlined,
+                          color: Color(0xFF163E5C),
+                          size: 42,
+                        ),
+                  ),
+                ),
+              ),
+              Text(
+                choice.label ?? String.fromCharCode(65 + index),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF0B2D4D),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildTextChoices(QuizQuestion question) {
+    return Column(
+      children: [
+        if (question.questionImagePath != null) ...[
+          Container(
+            height: 180,
+            width: double.infinity,
+            padding: const EdgeInsets.all(5),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF5EEDC),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFE8D8B8)),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.asset(
+                QuizRepository.normalizeAssetPath(question.questionImagePath),
+                fit: BoxFit.cover,
+                errorBuilder:
+                    (context, error, stackTrace) => const Icon(
+                      Icons.image_not_supported_outlined,
+                      color: Color(0xFF163E5C),
+                      size: 42,
+                    ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: question.choices.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 15,
+            mainAxisSpacing: 15,
+            childAspectRatio: 2.0,
+          ),
+          itemBuilder: (context, index) {
+            return _ChoiceCard(
+              selected: _manager?.selectedAnswerIndex == index,
+              correct:
+                  _manager?.selectedAnswerIndex != null &&
+                  index == question.answerIndex,
+              wrong:
+                  _manager?.selectedAnswerIndex == index &&
+                  index != question.answerIndex,
+              onTap: () => _selectAnswer(index),
+              child: Row(
+                children: [
+                  Text(
+                    String.fromCharCode(65 + index),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF0B2D4D),
+                    ),
+                  ),
+                  const SizedBox(width: 15),
+                  Expanded(
+                    child: Text(
+                      question.choices[index].displayText,
+                      style: const TextStyle(
+                        color: Color.fromARGB(255, 23, 29, 35),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _ChoiceCard extends StatelessWidget {
+  const _ChoiceCard({
+    required this.selected,
+    required this.correct,
+    required this.wrong,
+    required this.onTap,
+    required this.child,
+  });
+
+  final bool selected;
+  final bool correct;
+  final bool wrong;
+  final VoidCallback onTap;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final revealColor =
+        wrong
+            ? const Color(0xFFFFF1F1)
+            : correct
+            ? const Color(0xFFE8F5E9)
+            : const Color(0xFFFAF8F2);
+    final revealBorderColor =
+        wrong
+            ? const Color(0xFFB42318)
+            : correct
+            ? const Color(0xFF2E7D32)
+            : selected
+            ? const Color(0xFF0B2D4D)
+            : const Color(0xFFE8D8B8);
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeInOut,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Ink(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: revealColor,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: revealBorderColor,
+              width: selected || correct || wrong ? 2 : 1,
+            ),
+            boxShadow:
+                correct
+                    ? const [
+                      BoxShadow(
+                        color: Color(0x332E7D32),
+                        blurRadius: 12,
+                        spreadRadius: 2,
+                      ),
+                    ]
+                    : wrong
+                    ? const [
+                      BoxShadow(
+                        color: Color(0x33B42318),
+                        blurRadius: 10,
+                        spreadRadius: 1,
+                      ),
+                    ]
+                    : null,
+          ),
+          child: AnimatedOpacity(
+            opacity: selected || correct || wrong ? 1 : 0.92,
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.easeInOut,
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
