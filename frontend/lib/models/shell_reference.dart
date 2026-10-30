@@ -59,16 +59,6 @@ const _shellReferences = <String, ShellReference>{
     safety:
         'Eat only mussels from approved or clean harvesting areas. Mussels are filter feeders and can accumulate harmful microorganisms, toxins and pollutants. Cook thoroughly.',
   ),
-  'sihi': ShellReference(
-    commonName: 'Sihi',
-    scientificName: 'Not confirmed (regional common name)',
-    habitat:
-        'Sihi is a regional common name, and the exact mollusk and habitat can vary by locality. Confirm the local species before relying on habitat information.',
-    edibility: 'Not confirmed for this image identification',
-    recommendedDish: 'No recommendation until the species is confirmed.',
-    safety:
-        'Do not eat or handle a specimen based only on an image classification. Follow local shellfish harvesting advisories and avoid polluted waters.',
-  ),
   'nautilus pompilius': ShellReference(
     commonName: 'Nautilus pompilius',
     scientificName: 'Nautilus pompilius - Chambered Nautilus',
@@ -79,9 +69,9 @@ const _shellReferences = <String, ShellReference>{
     safety:
         'Meat is consumed in some Philippine local markets, but this is a deep-water animal and should not be treated like an ordinary shallow-water shellfish.',
   ),
-  'nerita polita': ShellReference(
-    commonName: 'Nerita polita',
-    scientificName: 'Nerita polita - Polished Nerite',
+  'sihi': ShellReference(
+    commonName: 'Sihi',
+    scientificName: 'Nerita polita', 
     habitat:
         'Primarily intertidal rocky and coral areas. Often hides or buries itself in sand during the day and comes out to graze on algae-covered rocks at night. Also occurs around mangroves and has been documented on intertidal shores of Capiz and other Philippine areas.',
     edibility: 'Edible',

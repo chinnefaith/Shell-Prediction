@@ -50,8 +50,8 @@ class _AdvisoryScreenState extends State<AdvisoryScreen> {
   String get _baseUrl {
     if (_backendUrl.trim().isNotEmpty) return _backendUrl;
     return Platform.isAndroid
-        ? 'https://shellscan-v1-production-fc95.up.railway.app'
-        : 'https://shellscan-v1-production-fc95.up.railway.app';
+        ? 'https://project-cx7m.onrender.com'
+        : 'https://project-cx7m.onrender.com';
   }
 
   Uri get _apiUri => Uri.parse('$_baseUrl/api/advisories/shellfish/');
